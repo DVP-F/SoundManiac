@@ -1,6 +1,6 @@
 import random, os.path, shutil
 
-corruptionDebug = True
+corruptionDebug = False
 
 class headerlookup:
 	def extension(ext: str):
@@ -89,7 +89,7 @@ class corrupt:
 		i=startindex
 		while i < len(data):
 			if data[i] != 0 and random.uniform(0.0, 1.001) <= chance:
-				data[i] ^= random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0x0, 0xff)))
+				data[i] ^= random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0x0, 0xff))) % 256
 				if random.uniform(0.0, 1.001) > chance:
 					data[i] = bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(chance))) ^ 0x7e, random.randbytes(1)[0], 7))
 
@@ -120,41 +120,52 @@ class corrupt:
 			# Set bits per sample (offset 34–35) to 8-bit (0x0008 little-endian)
 			data[34:36] = (8).to_bytes(2, 'little')
 
+		if corruptionDebug: print("Precalcs donesies :o")
+
 		startindex = headerlookup.extension(os.path.splitext(file_path_in)[1]) if start_index is None else start_index
 
-		i=startindex
+		i=startindex; steps = 0
 		while i < len(data)-270:
 			if random.randint(0,100)<=13:
 				for x in range(random.randint(3, 270)):
 					if random.choice([0,1])==0:
 						data[i+x]  %= inserts[random.randint(0,3)]
 					else:data[i+x] ^= inserts[random.randint(0,3)]
-			i += random.choice([1, -2, 3, 4])
-			i = abs(i%256)
+			if steps % random.randint(1, 70000) == 0:
+				if corruptionDebug: print(f"INSERTIONS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+			steps += 1
+			i += random.choice([1, -1, 3])
 
 		for layer in range(0,1):
 			if layer == 0: layer = 0x83
 			else: layer = 0xf9
-			i = startindex
+			i = startindex; steps = 0
 			while i < len(data)-1:
 				if data[i] < layer and random.randint(0,100)<=17:
 					data[i] ^= random.choice([
 						random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0, 255))),
 						bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(seed))) ^ 0x7e, random.randbytes(1)[0] % 6, 7)),
-						CRC1b[random.randint(0,3)] | i])
+						CRC1b[random.randint(0,3)] | i]) % 256
 					data[i] = (~(data[i] | int.from_bytes(random.choice([filter[0:8], filter[8:16]])))) & 0xff
-				i += random.choice([1, -2, 3, 4])
-				i = abs(i%256)
+				if steps % random.randint(1, 70000) == 0:
+					if corruptionDebug: print(f"MANIPULATIONS // [{steps}] i={i}, byte={data[i]}, layer={hex(layer)} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+				steps += 1
+				i += random.choice([1, -1, 3])
 
-		i=startindex
+		i=startindex; steps = 0
 		while i < len(data)-1:
 			if random.randint(0,97) <= 9:
-				data[i:(i+16)] = hashlib.md5(data[i:(i+16)])
-			i += random.choice([1, -2, 3, 4])
+				data[i:(i+16)] = hashlib.md5(data[i:(i+16)]).digest()
+			if steps % random.randint(1, 70000) == 0:
+				if corruptionDebug: print(f"HASHINGS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+			steps += 1
+			i += random.choice([1, -1, 3])
 
 		with open(file_path_out, 'wb') as f:
 			f.write(data)
 
+		CRC2 = binascii.crc32(data)
+		if corruptionDebug: print(f"Hash comparison (CRC): before={CRC1:032b} after={CRC2:032b}")
 
 class level:
 	high = "high"
