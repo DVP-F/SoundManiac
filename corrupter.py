@@ -28,8 +28,9 @@ class corrupt:
 		if not options:
 			match type.lower():
 				case 'simple': corrupt.file_corrupter_mask_simple(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1]))
-				case 'random': corrupt.file_corrupter_random()
+				case 'random': corrupt.file_corrupter_random(file_path, temp_path, options[0], headerlookup.extension(os.path.splitext(file_path)[1]))
 				case 'biased': corrupt.file_corrupter_mask_biased(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1]))
+				case 'evil'  : corrupt.file_corrupter_evil(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1])) # best with .wav!
 				case _:        None 
 		else:
 			#! I refuse to write warnings or error handling for this. if you fuck up using them that is not my problem
@@ -79,8 +80,81 @@ class corrupt:
 		with open(file_path_out, 'wb') as f:
 			f.write(data)
 
-	def file_corrupter_random(file_path_in: str, file_path_out: str, chance= 0.01):
-		""
+	def file_corrupter_random(file_path_in: str, file_path_out: str, chance= 0.01, start_index= None):
+		with open(file_path_in, 'rb') as f:
+			data = bytearray(f.read())
+
+		startindex = headerlookup.extension(os.path.splitext(file_path_in)[1]) if start_index is None else start_index
+
+		i=startindex
+		while i < len(data):
+			if data[i] != 0 and random.uniform(0.0, 1.001) <= chance:
+				data[i] ^= random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0x0, 0xff)))
+				if random.uniform(0.0, 1.001) > chance:
+					data[i] = bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(chance))) ^ 0x7e, random.randbytes(1)[0], 7))
+
+		with open(file_path_out, 'wb') as f:
+			f.write(data)
+
+	def file_corrupter_evil(file_path_in: str, file_path_out: str, start_index= None):
+		import binascii, hashlib
+
+		seed = bitmanip.ror(int.from_bytes(bytes(os.path.basename(file_path_in), 'utf-8'), 'little'), abs(int.from_bytes(b'gay cat bois >~<') & 128), abs(int.from_bytes(bytes(os.path.basename(file_path_in), 'utf-8'), 'little') % 256)) ^ random.randint(0, int.from_bytes(random.randbytes(len(os.path.basename(file_path_in)))))
+		filter = (bitmanip.rol(int.from_bytes(b'thigh highs~ uwu'), 1, 16) ^ int.from_bytes(b'HI! >:3 HI! >:3 ')).to_bytes(16, 'little')
+
+		inserts = {0: 0xfe, 1: 0x67, 2: 203, 3: 0b10111101}
+
+		with open(file_path_in, 'rb') as f:
+			data = bytearray(f.read())
+
+		CRC1= binascii.crc32(data)
+		CRC1b=CRC1.to_bytes(4, 'little')
+
+		if data[8:12] == b'WAVE' and data[0:4] == b'RIFF':
+			sample_rate = int.from_bytes(data[24:28], 'little')
+			if sample_rate == 48000:
+				data[24:28] = (44100).to_bytes(4, 'little')
+			else:
+				data[24:28] = (48000).to_bytes(4, 'little')
+
+			# Set bits per sample (offset 34–35) to 8-bit (0x0008 little-endian)
+			data[34:36] = (8).to_bytes(2, 'little')
+
+		startindex = headerlookup.extension(os.path.splitext(file_path_in)[1]) if start_index is None else start_index
+
+		i=startindex
+		while i < len(data)-270:
+			if random.randint(0,100)<=13:
+				for x in range(random.randint(3, 270)):
+					if random.choice([0,1])==0:
+						data[i+x]  %= inserts[random.randint(0,3)]
+					else:data[i+x] ^= inserts[random.randint(0,3)]
+			i += random.choice([1, -2, 3, 4])
+			i = abs(i%256)
+
+		for layer in range(0,1):
+			if layer == 0: layer = 0x83
+			else: layer = 0xf9
+			i = startindex
+			while i < len(data)-1:
+				if data[i] < layer and random.randint(0,100)<=17:
+					data[i] ^= random.choice([
+						random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0, 255))),
+						bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(seed))) ^ 0x7e, random.randbytes(1)[0] % 6, 7)),
+						CRC1b[random.randint(0,3)] | i])
+					data[i] = (~(data[i] | int.from_bytes(random.choice([filter[0:8], filter[8:16]])))) & 0xff
+				i += random.choice([1, -2, 3, 4])
+				i = abs(i%256)
+
+		i=startindex
+		while i < len(data)-1:
+			if random.randint(0,97) <= 9:
+				data[i:(i+16)] = hashlib.md5(data[i:(i+16)])
+			i += random.choice([1, -2, 3, 4])
+
+		with open(file_path_out, 'wb') as f:
+			f.write(data)
+
 
 class level:
 	high = "high"
@@ -98,7 +172,7 @@ class mask:
 
 	@staticmethod
 	def rolranmasks(maskval=MASKS[5]):
-		mlist = [maskval]; bits=maskval.bit_length()
+		mlist = [maskval]; bits=max(8, maskval.bit_length())
 		for _ in range(bits):
 			maskval = bitmanip.rol(maskval, 1, bits) ^ (maskval ^ 0x0c)
 			mlist.append(maskval)
