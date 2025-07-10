@@ -59,7 +59,7 @@ def main():
 				case 'high': mode = modes.bias_high
 		case _: mode = modes.dry
 
-	file_path = './sounds/quack_sfx.wav'
+	file_path = './sounds/panconkisu_dial-up.wav'
 
 	match launchargs:
 		case _ if 'file' in launchargs:

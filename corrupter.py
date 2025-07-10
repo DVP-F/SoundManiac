@@ -11,6 +11,17 @@ class headerlookup:
 			case 'flac': 			 return 512
 			case 'm4a'|'alac'|'aac': return 1024
 			case _: 				 return 1024
+	
+	def wavdatachunklocator(data: bytes) -> int:
+		i = 12  # Skip 'RIFF' + size + 'WAVE'
+		while i < len(data) - 8:
+			chunk_id = data[i:i+4]
+			chunk_size = int.from_bytes(data[i+4:i+8], 'little')
+			if chunk_id == b'data':
+				return max(0x4c, i + 8)
+			i += 8 + chunk_size
+		return 0x4d  # fallback
+
 
 class corrupt:
 	def corruption_wrapper(file_path: str, type: str, options= [], folder_path = ""):
@@ -30,7 +41,7 @@ class corrupt:
 				case 'simple': corrupt.file_corrupter_mask_simple(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1]))
 				case 'random': corrupt.file_corrupter_random(file_path, temp_path, options[0], headerlookup.extension(os.path.splitext(file_path)[1]))
 				case 'biased': corrupt.file_corrupter_mask_biased(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1]))
-				case 'evil'  : corrupt.file_corrupter_evil(file_path, temp_path, headerlookup.extension(os.path.splitext(file_path)[1])) # best with .wav!
+				case 'evil'  : corrupt.file_corrupter_evil(file_path, temp_path) # best with .wav!
 				case _:        None 
 		else:
 			#! I refuse to write warnings or error handling for this. if you fuck up using them that is not my problem
@@ -110,19 +121,19 @@ class corrupt:
 		CRC1= binascii.crc32(data)
 		CRC1b=CRC1.to_bytes(4, 'little')
 
-		if data[8:12] == b'WAVE' and data[0:4] == b'RIFF':
-			sample_rate = int.from_bytes(data[24:28], 'little')
-			if sample_rate == 48000:
-				data[24:28] = (44100).to_bytes(4, 'little')
-			else:
-				data[24:28] = (48000).to_bytes(4, 'little')
+		# if data[8:12] == b'WAVE' and data[0:4] == b'RIFF':
+		# 	sample_rate = int.from_bytes(data[24:28], 'little')
+		# 	if sample_rate == 48000:
+		# 		data[24:28] = (44100).to_bytes(4, 'little')
+		# 	else:
+		# 		data[24:28] = (48000).to_bytes(4, 'little')
 
-			# Set bits per sample (offset 34–35) to 8-bit (0x0008 little-endian)
-			data[34:36] = (8).to_bytes(2, 'little')
+		# 	Set bits per sample (offset 34–35) to 8-bit (0x0008 little-endian)
+		# 	data[34:36] = (8).to_bytes(2, 'little')
 
 		if corruptionDebug: print("Precalcs donesies :o")
 
-		startindex = headerlookup.extension(os.path.splitext(file_path_in)[1]) if start_index is None else start_index
+		startindex = headerlookup.wavdatachunklocator(data) if start_index is None else start_index
 
 		i=startindex; steps = 0
 		while i < len(data)-270:
@@ -131,10 +142,12 @@ class corrupt:
 					if random.choice([0,1])==0:
 						data[i+x]  %= inserts[random.randint(0,3)]
 					else:data[i+x] ^= inserts[random.randint(0,3)]
-			if steps % random.randint(1, 70000) == 0:
+					data[i] &= 0xff
+			if steps % random.randint(30000, 7000000) == 0:
 				if corruptionDebug: print(f"INSERTIONS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
 			steps += 1
 			i += random.choice([1, -2, 3])
+			i = max(startindex, i)
 
 		for layer in range(0,2):
 			if layer == 0: layer = 0x83
@@ -147,19 +160,22 @@ class corrupt:
 						bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(seed))) ^ 0x7e, random.randbytes(1)[0] % 6, 7)),
 						CRC1b[random.randint(0,3)] | i]) % 256
 					data[i] = (~(data[i] | int.from_bytes(random.choice([filter[0:8], filter[8:16]])))) & 0xff
-				if steps % random.randint(1, 70000) == 0:
+				if steps % random.randint(30000, 7000000) == 0:
 					if corruptionDebug: print(f"MANIPULATIONS // [{steps}] i={i}, byte={data[i]}, layer={hex(layer)} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
 				steps += 1
 				i += random.choice([1, -2, 3])
+				i = max(startindex, i)
 
 		i=startindex; steps = 0
 		while i < len(data)-1:
 			if random.randint(0,97) <= 9:
-				data[i:(i+16)] = hashlib.md5(data[i:(i+16)]).digest()
-			if steps % random.randint(1, 70000) == 0:
+				hash_bytes = hashlib.md5(data[i:i+16]).digest()
+				data[i:i+min(8, len(data)-i)] = hash_bytes[:8]
+			if steps % random.randint(30000, 7000000) == 0:
 				if corruptionDebug: print(f"HASHINGS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
 			steps += 1
 			i += random.choice([1, -2, 3])
+			i = max(startindex, i)
 
 		with open(file_path_out, 'wb') as f:
 			f.write(data)
@@ -219,16 +235,6 @@ class corrupt:
 
 		CRC1= binascii.crc32(data)
 		CRC1b=CRC1.to_bytes(4, 'little')
-
-		if data[8:12] == b'WAVE' and data[0:4] == b'RIFF':
-			sample_rate = int.from_bytes(data[24:28], 'little')
-			if sample_rate == 48000:
-				data[24:28] = (44100).to_bytes(4, 'little')
-			else:
-				data[24:28] = (48000).to_bytes(4, 'little')
-
-			# Set bits per sample (offset 34–35) to 8-bit (0x0008 little-endian)
-			data[34:36] = (8).to_bytes(2, 'little')
 
 		if corruptionDebug: print("Precalcs donesies :o")
 
