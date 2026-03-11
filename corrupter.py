@@ -281,6 +281,71 @@ class corrupt:
 		if corruptionDebug: print(f"Hash comparison (CRC): before={CRC1:032b} after={CRC2:032b}")
 
 		return data
+		
+	def bytearray_corrupter_evil_dynamic(data: bytearray, start_index= None, *, degree:int|float = 25):
+		# dynamic evil corrputer :o
+		import binascii, hashlib
+
+		# normalize degrees
+		#? int: 0 -> 100	;	float: 0.00 -> 1.00
+		#? no effect -> static of standard evil corrupt
+		_t_degree = type(degree)
+		# raise TypeError if not (((type(degree)!=int)|(type(degree)!=float)) else ( if type(degree)==int else degree = min(max(0, int(degree*100)), 100))) else raise EOFError
+		# (degree = min(max(0, degree), 100)) if _t_degree==int else (degree = min(max(0, int(degree*100)), 100)) if _t_degree==float else raise TypeError
+
+		seed = bitmanip.ror(int.from_bytes(data[3:5], 'little'), abs(int.from_bytes(b'gay cat bois >~<') & 128), abs(int.from_bytes(data[0:2], 'little') % 256)) ^ random.randint(0, int.from_bytes(random.randbytes(data[2].bit_count())))
+		filter = (bitmanip.rol(int.from_bytes(b'thigh highs~ uwu'), 1, 16) ^ int.from_bytes(b'HI! >:3 HI! >:3 ')).to_bytes(16, 'little')
+
+		inserts = {0: 0xfe, 1: 0x67, 2: 203, 3: 0b10111101}
+
+		CRC1= binascii.crc32(data)
+		CRC1b=CRC1.to_bytes(4, 'little')
+
+		if corruptionDebug: print("Precalcs donesies :o")
+
+		startindex = 0 if start_index is None else start_index
+
+		i=startindex; steps = 0
+		while i < len(data)-270:
+			if random.randint(0,100)<=13:
+				for x in range(random.randint(3, 270)):
+					if random.choice([0,1])==0:
+						data[i+x]  %= inserts[random.randint(0,3)]
+					else:data[i+x] ^= inserts[random.randint(0,3)]
+			if steps % random.randint(1, 70000) == 0:
+				if corruptionDebug: print(f"INSERTIONS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+			steps += 1
+			i += random.choice([1, -2, 3])
+
+		for layer in range(0,2):
+			if layer == 0: layer = 0x83
+			else: layer = 0xf9
+			i = startindex; steps = 0
+			while i < len(data)-1:
+				if data[i] < layer and random.randint(0,100)<=17:
+					data[i] ^= random.choice([
+						random.choice(mask.MASKS) ^ random.choice(mask.rolranmasks(random.randint(0, 255))),
+						bitmanip.ror(data[i], random.randint(1, 8), 8) ^ (bitmanip.rol(ord(random.choice(str(seed))) ^ 0x7e, random.randbytes(1)[0] % 6, 7)),
+						CRC1b[random.randint(0,3)] | i]) % 256
+					data[i] = (~(data[i] | int.from_bytes(random.choice([filter[0:8], filter[8:16]])))) & 0xff
+				if steps % random.randint(1, 70000) == 0:
+					if corruptionDebug: print(f"MANIPULATIONS // [{steps}] i={i}, byte={data[i]}, layer={hex(layer)} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+				steps += 1
+				i += random.choice([1, -2, 3])
+
+		i=startindex; steps = 0
+		while i < len(data)-1:
+			if random.randint(0,97) <= 9:
+				data[i:(i+16)] = hashlib.md5(data[i:(i+16)]).digest()
+			if steps % random.randint(1, 70000) == 0:
+				if corruptionDebug: print(f"HASHINGS // [{steps}] i={i}, byte={data[i]} {random.choice(["Meowies", "Nyah~ uwu", "corrution in progress bleh", ">:3", "Nothing is safe from me."])}")
+			steps += 1
+			i += random.choice([1, -2, 3])
+
+		CRC2 = binascii.crc32(data)
+		if corruptionDebug: print(f"Hash comparison (CRC): before={CRC1:032b} after={CRC2:032b}")
+
+		return data
 
 class level:
 	high = "high"
